@@ -1,0 +1,15 @@
+# docker-compose.prod.yml
+# Se usa en producción en VPS Contabo
+# Comando: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Nota: El .env.production debe estar en el directorio cuando ejecutes este comando
+
+services:
+  backend:
+    depends_on:
+      - evolution_api
+
+  evolution_api:
+    depends_on:
+      - redis
+    environment:
+      - DATABASE_ENABLED=false

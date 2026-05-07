@@ -1,0 +1,90 @@
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// TABLA 0: Usuarios (Autenticación)
+// ==========================================
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String    // Contraseña encriptada
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relaciones: Un usuario puede tener múltiples sesiones (bots)
+  sessions  Session[]
+}
+
+// ==========================================
+// TABLA 1: Sesiones de Baileys (WhatsApp)
+// ==========================================
+model Session {
+  id        String   @id // El nombre de la sesión, ej: 'bot-ventas'
+  name      String?  // Nombre original para mostrar en el frontend (ej: "Asistente de Ventas Pro")
+  userId    String   // Referencia al dueño de este bot
+  data      String   // Los credenciales de Baileys en texto largo
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messagesSent     Int @default(0)
+  messagesReceived Int @default(0)
+
+  // Relaciones
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chats     Chat[]
+  botConfig BotConfig?
+}
+
+// ==========================================
+// TABLA 2: Configuración e IA (Árboles)
+// ==========================================
+model BotConfig {
+  id           String   @id @default(uuid())
+  sessionId    String?  @unique // Referencia al ID de la sesión de Baileys
+  useAI        Boolean  @default(false)
+  aiProvider   String?  // Ej: "openai"
+  aiPrompt     String?  // El contexto o personalidad de la IA
+  responseTree Json?    // El árbol de opciones en formato JSON
+
+  // Relación
+  session      Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// TABLA 3: Chats (Conversaciones Activas)
+// ==========================================
+model Chat {
+  id            String    @id @default(uuid())
+  sessionId     String    // Referencia al ID de la sesión de Baileys
+  customerPhone String    // Número de WhatsApp del cliente
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  isPaused      Boolean   @default(false) // Si el bot está pausado en este chat
+
+  // Relaciones
+  messages      Message_History[]
+  session       Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, customerPhone]) // Evita duplicados: un chat por cliente en cada bot
+}
+
+// ==========================================
+// TABLA 4: Mensajes (Historial)
+// ==========================================
+model Message_History {
+  id        String   @id @default(uuid())
+  chatId    String
+  role      String   // "user" (cliente) o "assistant" (bot)
+  content   String   @db.Text
+  timestamp DateTime @default(now())
+
+  // Relación
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+}
