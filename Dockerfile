@@ -6,7 +6,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --verbose # Añadido --verbose para depuración
 
 COPY . .
 # Elimina las devDependencies en esta misma etapa
