@@ -5,7 +5,7 @@ services:
     container_name: bot_wp_backend
     restart: always
     ports:
-      - "3000:3000"
+      - "3030:3000"
       - "5555:5555"
     environment:
       - PORT=${PORT:-3000}
