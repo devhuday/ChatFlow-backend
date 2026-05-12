@@ -1,13 +1,17 @@
 import prisma from '../services/prisma.js';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'Jerplakey_0903';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 // ==========================================
 // OBTENER TODAS LAS INSTANCIAS DE EVOLUTION API (DEBUG)
 // ==========================================
 export const getEvolutionInstances = async (req, res) => {
     try {
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
+
         const evResponse = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
             method: 'GET',
             headers: { 'apikey': EVOLUTION_API_KEY }
@@ -26,6 +30,10 @@ export const getEvolutionInstances = async (req, res) => {
 // ==========================================
 export const cleanupGhostBots = async (req, res) => {
     try {
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
+
         // 1. Obtener todas las instancias de Evolution API
         const evResponse = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
             method: 'GET',

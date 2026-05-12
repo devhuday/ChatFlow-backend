@@ -1,7 +1,7 @@
 import prisma from '../services/prisma.js';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'Jerplakey_0903';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 // ==========================================
 // OBTENER CHATS DE UN BOT (BANDEJA DE ENTRADA)
@@ -10,6 +10,10 @@ export const getBotChats = async (req, res) => {
     try {
         const { botName } = req.params;
         const userId = req.user.userId;
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
 
         // 1. Validar que el bot le pertenezca al usuario
         const bot = await prisma.session.findUnique({ where: { id: botName } });
@@ -29,7 +33,44 @@ export const getBotChats = async (req, res) => {
             }
         });
 
-        res.json(chats);
+        // 3. Enriquecer los chats con información de contacto de Evolution API
+        const enrichedChats = await Promise.all(chats.map(async (chat) => {
+            try {
+                // Obtener la foto de perfil
+                const picUrlResponse = await fetch(`${EVOLUTION_API_URL}/chat/fetchProfilePictureUrl/${botName}?number=${chat.customerPhone}`, {
+                    headers: { 'apikey': EVOLUTION_API_KEY }
+                });
+                let profilePicUrl = null;
+                if (picUrlResponse.ok) {
+                    const picUrlData = await picUrlResponse.json();
+                    profilePicUrl = picUrlData.profilePictureUrl || null;
+                } else {
+                    console.error(`Error al obtener foto de perfil para ${chat.customerPhone}: Status ${picUrlResponse.status}`);
+                }
+
+                // Obtener el nombre del contacto
+                const contactResponse = await fetch(`${EVOLUTION_API_URL}/chat/fetchContact/${botName}?number=${chat.customerPhone}`, {
+                    headers: { 'apikey': EVOLUTION_API_KEY }
+                });
+                let contactName = chat.customerPhone; // Valor por defecto
+                if (contactResponse.ok) {
+                    const contactData = await contactResponse.json();
+                    // El 'pushname' es el nombre que el usuario se pone a sí mismo en WhatsApp.
+                    // El 'name' es el que tienes guardado en la agenda del teléfono del bot.
+                    contactName = contactData.contact?.pushname || contactData.contact?.name || chat.customerPhone;
+                } else {
+                    console.error(`Error al obtener contacto para ${chat.customerPhone}: Status ${contactResponse.status}`);
+                }
+
+                return { ...chat, profilePicUrl, contactName };
+            } catch (enrichError) {
+                console.error(`Error enriqueciendo el chat para ${chat.customerPhone}:`, enrichError);
+                // Devolver el chat sin enriquecer si falla la llamada a la API
+                return { ...chat, profilePicUrl: null, contactName: chat.customerPhone };
+            }
+        }));
+
+        res.json(enrichedChats);
     } catch (error) {
         console.error('Error al obtener los chats del bot:', error);
         res.status(500).json({ error: 'Error interno al cargar los chats.' });
@@ -44,6 +85,10 @@ export const sendBotChatMessage = async (req, res) => {
         const { botName, chatId } = req.params;
         const { text } = req.body;
         const userId = req.user.userId;
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
 
         if (!text || typeof text !== 'string' || !text.trim()) {
             return res.status(400).json({ error: 'Debes proporcionar el texto del mensaje.' });
@@ -116,6 +161,10 @@ export const getChatStatus = async (req, res) => {
         const { botName, chatId } = req.params;
         const userId = req.user.userId;
 
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
+
         const bot = await prisma.session.findUnique({ where: { id: botName } });
         if (!bot || bot.userId !== userId) {
             return res.status(403).json({ error: 'No tienes permiso para ver este chat.' });
@@ -147,6 +196,10 @@ export const pauseChat = async (req, res) => {
     try {
         const { botName, chatId } = req.params;
         const userId = req.user.userId;
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
 
         const bot = await prisma.session.findUnique({ where: { id: botName } });
         if (!bot || bot.userId !== userId) {
@@ -181,6 +234,10 @@ export const resumeChat = async (req, res) => {
     try {
         const { botName, chatId } = req.params;
         const userId = req.user.userId;
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
 
         const bot = await prisma.session.findUnique({ where: { id: botName } });
         if (!bot || bot.userId !== userId) {

@@ -1,7 +1,7 @@
 import prisma from '../services/prisma.js';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'Jerplakey_0903';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 // ==========================================
 // CREAR UN NUEVO BOT
@@ -11,6 +11,10 @@ export const createBot = async (req, res) => {
         const userId = req.user.userId; // Obtenido del token gracias a verifyToken
         // Recibimos los datos con la nueva estructura del Frontend
         const { name, apiType, prompt, status, flows } = req.body; 
+
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+            return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
+        }
 
         if (!name) {
             return res.status(400).json({ error: 'Debes proporcionar un nombre para el bot (name).' });

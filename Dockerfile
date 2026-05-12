@@ -18,8 +18,8 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Solo copiamos lo que necesita el servidor en runtime
-RUN npm prune --omit=dev --prefix /app
+# Copiamos los artefactos de la etapa de build, incluyendo node_modules completo
+# ya que el CMD necesita `prisma` que es una devDependency.
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src ./src
@@ -30,4 +30,3 @@ COPY --from=builder /app/prisma.config.* ./
 EXPOSE 3000
 # Al iniciar, nos aseguramos que la BD esté al día, que el cliente de Prisma esté generado y luego arrancamos el servidor
 CMD ["sh", "-c", "npx prisma db push && npx prisma generate && node index.js"]
-

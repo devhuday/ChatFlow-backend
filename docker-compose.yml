@@ -13,8 +13,25 @@ services:
       - EVOLUTION_API_URL=${EVOLUTION_API_URL}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
+      - CLERK_JWT_KEY=${CLERK_JWT_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - TOGETHER_API_KEY=${TOGETHER_API_KEY}
     depends_on:
+      - postgres
       - evolution_api
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: bot_wp_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: bot_wp
+      POSTGRES_PASSWORD: bot_wp_password
+      POSTGRES_DB: bot_wp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   evolution_api:
     image: evoapicloud/evolution-api:latest
@@ -30,7 +47,11 @@ services:
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://redis:6379/0
       - CACHE_REDIS_PREFIX_KEY=evolution
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://bot_wp:bot_wp_password@postgres:5432/bot_wp_db?schema=evolution
     depends_on:
+      - postgres
       - redis
 
   redis:
@@ -39,3 +60,6 @@ services:
     restart: always
     ports:
       - "6379:6379"
+
+volumes:
+  pgdata:

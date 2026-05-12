@@ -1,13 +1,17 @@
 import prisma from '../services/prisma.js';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'Jerplakey_0903';
-
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 // Token de Together AI (A futuro te recomiendo pasarlo al archivo .env)
-const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY || 'tgp_v1_pmusbD4IJzbuqo6EqiQtOAI6K6Bum0ZvGS8B5hAeK04';
+const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
 
 export const handleWebhook = async (req, res) => {
     try {
+        if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY || !TOGETHER_API_KEY) {
+            console.error('Error de configuración: Una o más claves API (Evolution, Together) no están definidas en el servidor.');
+            return res.status(500).json({ status: 'error', message: 'Error de configuración del servidor.' });
+        }
+
         const event = req.body;
         
         // Evolution API envía el tipo de evento en la propiedad "event"
@@ -132,96 +136,149 @@ export const handleWebhook = async (req, res) => {
             // PERO: Si el chat está pausado por el usuario, omitir todo esto
             if (chatRecord && chatRecord.isPaused) {
                 console.log(`⏸️  Chat pausado para ${senderPhone}. El bot NO responderá automáticamente.`);
-            } else if (text && chatRecord) {
+            } else if (chatRecord) {
                 try {
                     let replyText = null;
+                    let actionTaken = false; // Bandera para saber si un flujo ya actuó
 
                     // A. Revisar si el mensaje coincide con alguna palabra clave de los flujos (responseTree)
-                    console.log(`🔍 tree: "${(botConfig.responseTree)}"`);
-                    if (botConfig.responseTree && Array.isArray(botConfig.responseTree)) {
-                        const userMessage = text.toLowerCase().trim(); // .trim() elimina espacios en blanco extra
+                    // El "trigger" puede ser texto o el ID de un botón/lista que el usuario presionó
+                    const selectedButtonId = messageData?.interactiveResponseMessage?.buttonResponseMessage?.selectedButtonId;
+                    const selectedListRowId = messageData?.interactiveResponseMessage?.listResponseMessage?.singleSelectReply?.selectedRowId;
+                    const triggerText = selectedButtonId || selectedListRowId || text;
+
+                    if (triggerText && botConfig.responseTree && Array.isArray(botConfig.responseTree)) {
+                        const userMessage = triggerText.toLowerCase().trim();
                         
                         // Función para quitar acentos/tildes (ej: "camión" -> "camion")
                         const normalizeText = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                         const normalizedUserMessage = normalizeText(userMessage);
 
-                        // 1ra Pasada: Coincidencia exacta
                         for (const flow of botConfig.responseTree) {
-                            // Extraemos el 'trigger' del JSON enviado por el Frontend
                             const trigger = flow.trigger?.toLowerCase().trim();
-                            
-                            // Preguntamos si el texto es EXACTAMENTE igual al trigger
-                            if (trigger && userMessage === trigger) {
-                                replyText = flow.response; 
-                                console.log(`🔀 Flujo activado por coincidencia exacta (trigger): '${trigger}'`);
-                                break; // Detenemos la búsqueda
-                            }
-                        }
+                            if (trigger && (userMessage === trigger || normalizedUserMessage === normalizeText(trigger))) {
+                                const action = flow.action;
+                                let apiResponse;
 
-                        // 2da Pasada: Coincidencia normalizada (sin tildes ni diacríticos) si la primera falló
-                        if (!replyText) {
-                            for (const flow of botConfig.responseTree) {
-                                const trigger = flow.trigger?.toLowerCase().trim();
-                                
-                                if (trigger && normalizedUserMessage === normalizeText(trigger)) {
-                                    replyText = flow.response; 
-                                    console.log(`🔀 Flujo activado por coincidencia normalizada (trigger): '${trigger}'`);
-                                    break; // Detenemos la búsqueda
+                                switch (action.type) {
+                                    case 'buttons':
+                                        console.log(`🔀 Flujo de BOTONES activado por trigger: '${trigger}'`);
+                                        apiResponse = await fetch(`${EVOLUTION_API_URL}/message/sendButtons/${botName}`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                                            body: JSON.stringify({
+                                                number: senderPhone,
+                                                description: action.payload.text,
+                                                footer: action.payload.footer,
+                                                buttons: action.payload.buttons.map(btn => ({ buttonId: btn.id, buttonText: { displayText: btn.text }, type: 'reply' }))
+                                            })
+                                        });
+                                        break;
+
+                                    case 'list':
+                                        console.log(`🔀 Flujo de LISTA activado por trigger: '${trigger}'`);
+                                        apiResponse = await fetch(`${EVOLUTION_API_URL}/message/sendList/${botName}`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                                            body: JSON.stringify({
+                                                number: senderPhone,
+                                                buttonText: action.payload.buttonText,
+                                                description: action.payload.title,
+                                                text: action.payload.description,
+                                                sections: action.payload.sections.map(sec => ({
+                                                    title: sec.title,
+                                                    rows: sec.rows.map(row => ({ rowId: row.id, title: row.title, description: row.description }))
+                                                }))
+                                            })
+                                        });
+                                        break;
+
+                                    case 'image':
+                                        console.log(`🔀 Flujo de IMAGEN activado por trigger: '${trigger}'`);
+                                        apiResponse = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${botName}`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                                            body: JSON.stringify({
+                                                number: senderPhone,
+                                                mediatype: 'image',
+                                                media: action.payload.url, // La URL de la imagen
+                                                // Solo incluimos el caption si existe para evitar errores
+                                                ...(action.payload.caption && { caption: action.payload.caption })
+                                            })
+                                        });
+                                        break;
+
+                                    case 'text':
+                                    default:
+                                        console.log(`🔀 Flujo de TEXTO activado por trigger: '${trigger}'`);
+                                        replyText = action.payload.text;
+                                        break;
                                 }
+
+                                if (apiResponse) {
+                                    const apiData = await apiResponse.json();
+                                    console.log(`✅ Orden de mensaje interactivo enviada a Evolution API. Resultado:`, JSON.stringify(apiData, null, 2));
+                                }
+
+                                actionTaken = true;
+                                break; // Detenemos la búsqueda una vez que encontramos un flujo
                             }
                         }
                     }
 
-                    // B. Si no hubo coincidencia en los flujos, le preguntamos a la IA
-                    if (!replyText) {
-                        console.log(`🧠 Consultando a Together AI con el modelo: ${botConfig.aiProvider || "meta-llama/Llama-3.3-70B-Instruct-Turbo"}`);
-                        const aiResponse = await fetch("https://api.together.xyz/v1/chat/completions", {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                                "Authorization": `Bearer ${TOGETHER_API_KEY}`,
-                            },
+                    // B. Si NINGÚN flujo actuó y tenemos texto del usuario, le preguntamos a la IA
+                    if (!actionTaken && text) {
+                        console.log(`🧠 Ningún flujo activado. Consultando a Together AI con el modelo: ${botConfig.aiProvider || "meta-llama/Llama-3.3-70B-Instruct-Turbo"}`);
+                        try {
+                            const aiResponse = await fetch("https://api.together.xyz/v1/chat/completions", {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${TOGETHER_API_KEY}`,
+                                },
+                                body: JSON.stringify({
+                                    model: botConfig.aiProvider || "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                                    messages: [
+                                        { role: "system", content: botConfig.aiPrompt || "Eres un asistente útil." },
+                                        { role: "user", content: text }
+                                    ],
+                                    max_tokens: 256,
+                                    temperature: 0.7
+                                }),
+                            });
+                            
+                            const aiData = await aiResponse.json();
+                            
+                            if (!aiResponse.ok || !aiData.choices || aiData.choices.length === 0) {
+                                console.error('❌ Error o respuesta vacía de Together AI:', aiData);
+                                throw new Error(aiData.error?.message || 'La API de Together AI devolvió un error.');
+                            }
+                            
+                            replyText = aiData.choices[0].message?.content?.trim() || "Lo siento, mi cerebro artificial se quedó en blanco. ¿Puedes repetir?";
+                            console.log(`💬 Texto generado por la IA: "${replyText}"`);
+                        } catch (aiError) {
+                            console.error('❌ Error en la consulta a la IA:', aiError);
+                            // Opcional: enviar un mensaje de error al usuario
+                            replyText = "Lo siento, estoy teniendo problemas para conectar con mi cerebro artificial en este momento.";
+                        }
+                    }
+
+                    // C. Si tenemos un texto de respuesta (de un flujo de texto o de la IA), lo enviamos.
+                    if (replyText) {
+                        const evSendResponse = await fetch(`${EVOLUTION_API_URL}/message/sendText/${botName}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
                             body: JSON.stringify({
-                                model: botConfig.aiProvider || "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-                                messages: [
-                                    { role: "system", content: botConfig.aiPrompt || "Eres un asistente útil." },
-                                    { role: "user", content: text }
-                                ],
-                                max_tokens: 256,
-                                temperature: 0.7
-                            }),
+                                number: senderPhone,
+                                text: replyText,
+                                delay: 1500 // Simula que está "Escribiendo..." por 1.5 segundos
+                            })
                         });
                         
-                        const aiData = await aiResponse.json();
-                        
-                        if (!aiResponse.ok || !aiData.choices || aiData.choices.length === 0) {
-                            console.error('❌ Error o respuesta vacía de Together AI:', aiData);
-                            throw new Error(aiData.error?.message || 'La API de Together AI devolvió un error.');
-                        }
-                        
-                        replyText = aiData.choices[0].message?.content?.trim() || "Lo siento, mi cerebro artificial se quedó en blanco. ¿Puedes repetir?";
-                        console.log(`💬 Texto generado por la IA: "${replyText}"`);
-                    }
+                        const evSendData = await evSendResponse.json();
+                        console.log(`✅ Orden de envío de texto enviada a Evolution API. Resultado:`, JSON.stringify(evSendData, null, 2));
 
-                    // C. Le pedimos a Evolution API que envíe el mensaje de vuelta a WhatsApp
-                    const evSendResponse = await fetch(`${EVOLUTION_API_URL}/message/sendText/${botName}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'apikey': EVOLUTION_API_KEY
-                        },
-                        body: JSON.stringify({
-                            number: senderPhone,
-                            text: replyText,
-                            delay: 1500 // Simula que está "Escribiendo..." por 1.5 segundos
-                        })
-                    });
-                    
-                    const evSendData = await evSendResponse.json();
-                    console.log(`✅ Orden enviada a Evolution API. Resultado:`, JSON.stringify(evSendData, null, 2));
-
-                    // D. Guardar la respuesta del bot en el historial
-                    if (chatRecord && replyText) {
+                        // D. Guardar la respuesta del bot en el historial
                         try {
                             await prisma.message_History.create({
                                 data: {
