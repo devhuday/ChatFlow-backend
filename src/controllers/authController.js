@@ -104,6 +104,7 @@ export const syncUser = async (req, res) => {
         const email = clerkUser.emailAddresses.find(e => e.id === clerkUser.primaryEmailAddressId)?.emailAddress;
         // Lógica mejorada para obtener el nombre:
         // 1. Intenta usar el nombre completo (fullName).
+        // 1. Intenta usar el nombre completo (fullName). 
         // 2. Si no existe, combina nombre (firstName) y apellido (lastName).
         // 3. Si tampoco existen, usa el nombre de usuario (username) como último recurso.
         const name = clerkUser.fullName || `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || clerkUser.username;
@@ -157,6 +158,20 @@ export const syncUser = async (req, res) => {
             }
         }
 
+        // --- INICIO: Bloque de depuración ---
+        console.log('Usuario sincronizado - ID interno:', user.id);
+        console.log('Usuario sincronizado - Clerk ID:', user.clerkId);
+        // --- FIN: Bloque de depuración ---
+
+        // Paso adicional: Si Session.userId fue alguna vez poblado con clerkId (por error o diseño anterior),
+        // aseguramos que ahora apunte al ID interno de nuestro usuario.
+        // Esto ayuda a corregir posibles inconsistencias de datos.
+        if (user.clerkId && user.id) {
+            await prisma.session.updateMany({
+                where: { userId: user.clerkId }, // Busca sesiones que aún usen el clerkId como userId
+                data: { userId: user.id } // Actualiza para que usen el ID interno del usuario
+            });
+        }
         // Generar el token JWT de NUESTRO backend
         const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
