@@ -21,8 +21,9 @@ model User {
   updatedAt DateTime  @updatedAt
   profilePicUrl String?
   
-  // Relaciones: Un usuario puede tener múltiples sesiones (bots)
+  // Relaciones: Un usuario puede tener múltiples sesiones (bots) y extensiones
   sessions  Session[]
+  extensions Extension[]
 }
 
 // ==========================================
@@ -50,17 +51,35 @@ model Session {
 model BotConfig {
   id           String   @id @default(uuid())
   sessionId    String?  @unique // Referencia al ID de la sesión de Baileys
-  useAI        Boolean  @default(false)
+  aiMode       String   @default("DISABLED") // "DISABLED", "INTERNAL", "EXTERNAL"
   aiProvider   String?  // Ej: "openai"
   aiPrompt     String?  // El contexto o personalidad de la IA
   responseTree Json?    // El árbol de opciones en formato JSON
+  extensionId  String?  // ID de la extensión externa seleccionada
 
-  // Relación
+  // Relaciones
   session      Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  extension    Extension? @relation(fields: [extensionId], references: [id], onDelete: SetNull)
 }
 
 // ==========================================
-// TABLA 3: Chats (Conversaciones Activas)
+// TABLA 3: Extensiones (Conectores Externos / n8n)
+// ==========================================
+model Extension {
+  id            String   @id @default(uuid())
+  userId        String
+  name          String   // Ej: "Mi IA en n8n"
+  webhookUrl    String   // La URL a donde enviamos los mensajes
+  webhookSecret String   // El secreto generado para autenticar respuestas
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botConfigs    BotConfig[] // Bots que están usando esta extensión
+}
+
+// ==========================================
+// TABLA 4: Chats (Conversaciones Activas)
 // ==========================================
 model Chat {
   id            String    @id @default(uuid())
@@ -78,13 +97,16 @@ model Chat {
 }
 
 // ==========================================
-// TABLA 4: Mensajes (Historial)
+// TABLA 5: Mensajes (Historial)
 // ==========================================
 model Message_History {
   id        String   @id @default(uuid())
   chatId    String
   role      String   // "user" (cliente) o "assistant" (bot)
+  type      String   @default("text") // "text", "image", "document", "buttons", "list", etc.
   content   String   @db.Text
+  mediaUrl  String?  // URL en caso de ser imagen, video o documento
+  fileName  String?  // Nombre del archivo en caso de documento
   timestamp DateTime @default(now())
 
   // Relación

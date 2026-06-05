@@ -5,6 +5,8 @@ import statusRoutes from './src/routes/status.js';
 import authRoutes from './src/routes/authRoutes.js';
 import botRoutes from './src/routes/botRoutes.js';
 import webhookRoutes from './src/routes/webhookRoutes.js';
+import uploadRoutes from './src/routes/uploadRoutes.js';
+import extensionRoutes from './src/routes/extensionRoutes.js';
 
 dotenv.config();
 
@@ -23,6 +25,8 @@ app.use('/api', statusRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/extensions', extensionRoutes);
 
 // Manejo global de errores (debe ir después de todas las rutas)
 app.use((err, _req, res, _next) => {

@@ -1,4 +1,5 @@
 import prisma from '../services/prisma.js';
+import crypto from 'crypto';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
@@ -10,7 +11,7 @@ export const createBot = async (req, res) => {
     try {
         const userId = req.user.userId; // Obtenido del token gracias a verifyToken
         // Recibimos los datos con la nueva estructura del Frontend
-        const { name, apiType, prompt, status, flows } = req.body; 
+        const { name, apiType, prompt, aiMode, flows, extensionId } = req.body; 
 
         if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
             return res.status(500).json({ error: 'La configuración de Evolution API no está completa en el servidor.' });
@@ -48,10 +49,11 @@ export const createBot = async (req, res) => {
                 
                 botConfig: {
                     create: {
+                        aiMode: aiMode || 'DISABLED',
                         aiProvider: apiType || "meta-llama/Llama-3.3-70B-Instruct-Turbo",
                         aiPrompt: prompt || "Eres un asistente útil.",
-                        useAI: status === 'active', // Si es "active", será true.
-                        responseTree: flows || [] // Prisma guarda arreglos JSON automáticamente
+                        responseTree: flows || [],
+                        extensionId: extensionId || null
                     }
                 }
             }
@@ -74,7 +76,10 @@ export const createBot = async (req, res) => {
             })
         });
 
-        res.status(201).json({ message: 'Instancia de bot creada con éxito', botName: instanceName, evolution: evData });
+        res.status(201).json({ 
+            message: 'Instancia de bot creada con éxito', 
+            botName: instanceName, 
+            evolution: evData });
 
         // ==============================================================
         // 🧹 MECANISMO DE AUTODESTRUCCIÓN (ANTIFUGAS DE MEMORIA)
@@ -191,7 +196,7 @@ export const updateBot = async (req, res) => {
     try {
         const { id } = req.params; // El ID de la instancia (ej. ventas-1)
         const userId = req.user.userId;
-        const { name, apiType, prompt, status, flows } = req.body;
+        const { name, apiType, prompt, aiMode, flows, extensionId } = req.body;
 
         // 1. Verificar que el bot exista y pertenezca a este usuario
         const existingBot = await prisma.session.findUnique({
@@ -209,10 +214,11 @@ export const updateBot = async (req, res) => {
                 ...(name !== undefined && { name: name }),
                 botConfig: {
                     update: {
+                        ...(aiMode !== undefined && { aiMode: aiMode }),
                         ...(apiType !== undefined && { aiProvider: apiType }),
                         ...(prompt !== undefined && { aiPrompt: prompt }),
-                        ...(status !== undefined && { useAI: status === 'active' }),
-                        ...(flows !== undefined && { responseTree: flows })
+                        ...(flows !== undefined && { responseTree: flows }),
+                        ...(extensionId !== undefined && { extensionId: extensionId })
                     }
                 }
             },
